@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import json
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class RawHeadline(BaseModel):
+    """A headline as received from a data source, before processing."""
+    source: str
+    source_category: str  # "rss", "api", "twitter"
+    title: str
+    description: Optional[str] = None
+    url: Optional[str] = None
+    published_at: Optional[datetime] = None
+
+
+class AnalysisResult(BaseModel):
+    """Result from Claude analysis."""
+    sentiment: str = "neutral"  # bullish, bearish, neutral
+    impact_score: int = 1  # 1-5
+    categories: list[str] = Field(default_factory=list)
+    tickers: list[str] = Field(default_factory=list)
+    asset_classes: list[str] = Field(default_factory=list)
+    summary: str = ""
+
+
+class Headline(BaseModel):
+    """A fully processed headline stored in the database."""
+    id: int = 0
+    content_hash: str = ""
+    source: str = ""
+    source_category: str = ""
+    title: str = ""
+    description: Optional[str] = None
+    url: Optional[str] = None
+    published_at: Optional[datetime] = None
+    ingested_at: Optional[datetime] = None
+
+    # Analysis fields
+    sentiment: Optional[str] = None
+    impact_score: Optional[int] = None
+    categories: list[str] = Field(default_factory=list)
+    tickers: list[str] = Field(default_factory=list)
+    asset_classes: list[str] = Field(default_factory=list)
+    analysis_summary: Optional[str] = None
+    analyzed_at: Optional[datetime] = None
+
+    is_analyzed: bool = False
+    is_market_moving: bool = False
+    classifier_score: float = 0.0
+
+    def to_ws_dict(self) -> dict:
+        """Serialize for WebSocket broadcast."""
+        return {
+            "id": self.id,
+            "source": self.source,
+            "source_category": self.source_category,
+            "title": self.title,
+            "description": self.description,
+            "url": self.url,
+            "published_at": self.published_at.isoformat() if self.published_at else None,
+            "ingested_at": self.ingested_at.isoformat() if self.ingested_at else None,
+            "sentiment": self.sentiment,
+            "impact_score": self.impact_score,
+            "categories": self.categories,
+            "tickers": self.tickers,
+            "asset_classes": self.asset_classes,
+            "analysis_summary": self.analysis_summary,
+            "is_analyzed": self.is_analyzed,
+            "is_market_moving": self.is_market_moving,
+            "classifier_score": self.classifier_score,
+        }
+
+
+# SQL schema for database initialization
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS headlines (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content_hash TEXT UNIQUE NOT NULL,
+    source TEXT NOT NULL,
+    source_category TEXT,
+    title TEXT NOT NULL,
+    description TEXT,
+    url TEXT,
+    published_at TIMESTAMP,
+    ingested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    sentiment TEXT,
+    impact_score INTEGER,
+    categories TEXT,
+    tickers TEXT,
+    asset_classes TEXT,
+    analysis_summary TEXT,
+    analyzed_at TIMESTAMP,
+
+    is_analyzed BOOLEAN DEFAULT 0,
+    is_market_moving BOOLEAN DEFAULT 0,
+    classifier_score REAL DEFAULT 0.0
+);
+
+CREATE INDEX IF NOT EXISTS idx_headlines_ingested ON headlines(ingested_at DESC);
+CREATE INDEX IF NOT EXISTS idx_headlines_sentiment ON headlines(sentiment);
+CREATE INDEX IF NOT EXISTS idx_headlines_source ON headlines(source);
+CREATE INDEX IF NOT EXISTS idx_headlines_hash ON headlines(content_hash);
+
+CREATE TABLE IF NOT EXISTS source_state (
+    source_name TEXT PRIMARY KEY,
+    last_seen_id TEXT,
+    last_poll_at TIMESTAMP,
+    error_count INTEGER DEFAULT 0,
+    is_healthy BOOLEAN DEFAULT 1
+);
+"""

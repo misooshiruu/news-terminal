@@ -1,0 +1,20 @@
+# Web framework
+fastapi>=0.115.0,<1.0
+uvicorn[standard]>=0.34.0,<1.0
+
+# Data sources
+aiohttp>=3.11.0,<4.0
+feedparser>=6.0.0,<7.0
+
+# Database
+aiosqlite>=0.20.0,<1.0
+
+# AI Analysis
+anthropic>=0.49.0,<1.0
+
+# Config & Utils
+python-dotenv>=1.0.0,<2.0
+pyyaml>=6.0,<7.0
+pydantic>=2.10.0,<3.0
+pydantic-settings>=2.0.0,<3.0
+python-dateutil>=2.9.0,<3.0
