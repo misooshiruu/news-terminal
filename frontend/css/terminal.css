@@ -63,12 +63,55 @@ body {
     color: var(--accent);
 }
 
+.header-center {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
+    flex: 1;
+    justify-content: center;
+}
+
+.header-center .ticker-sep {
+    color: var(--text-muted);
+    margin: 0 4px;
+}
+
+.header-center .ticker-up {
+    color: var(--bullish);
+}
+
+.header-center .ticker-down {
+    color: var(--bearish);
+}
+
+.header-center .ticker-warn {
+    color: var(--impact-4);
+}
+
 .header-right {
     display: flex;
     align-items: center;
     gap: 12px;
     color: var(--text-secondary);
     font-size: 12px;
+}
+
+.nav-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+}
+
+.nav-link:hover {
+    color: var(--accent);
+    border-color: var(--accent);
 }
 
 .status-dot {

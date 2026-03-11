@@ -35,13 +35,20 @@ Impact score guide:
 4 = Significant, broad market movement expected
 5 = Major, systemic/crisis level
 
+When market context is provided, factor it into your impact assessment:
+- High VIX (>25) means fear is already elevated, so bearish news may have less marginal impact (partially priced in)
+- If SPY is already down significantly, further bearish news may have diminishing impact
+- Upcoming Fed meetings or CPI releases heighten sensitivity to monetary policy and inflation headlines
+- Consider whether the news is likely already reflected in current prices
+
 Be concise. Focus on actionable market implications. Do not speculate beyond what the headline states."""
 
 ANALYSIS_USER_TEMPLATE = """Analyze this headline for market impact:
 
 Source: {source}
 Headline: {title}
-{description_line}"""
+{description_line}
+{market_context}"""
 
 
 async def analyze_headline(
@@ -50,6 +57,7 @@ async def analyze_headline(
     source: str,
     title: str,
     description: Optional[str] = None,
+    market_context: str = "",
 ) -> AnalysisResult:
     """Call Claude to analyze a single headline. Returns AnalysisResult."""
 
@@ -58,6 +66,7 @@ async def analyze_headline(
         source=source,
         title=title,
         description_line=description_line,
+        market_context=market_context,
     ).strip()
 
     try:

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calibration - Market Terminal</title>
+    <link rel="stylesheet" href="/static/css/terminal.css">
+    <style>
+        body { overflow: auto; }
+        .cal-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .cal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .cal-header h1 {
+            font-size: 16px;
+            letter-spacing: 2px;
+            color: var(--accent);
+        }
+        .cal-back {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+        .cal-back:hover { color: var(--accent); }
+        .cal-section {
+            margin-bottom: 32px;
+        }
+        .cal-section h2 {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid var(--border);
+        }
+        .cal-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .cal-table th, .cal-table td {
+            padding: 8px 12px;
+            text-align: right;
+            border-bottom: 1px solid var(--border);
+            font-size: 12px;
+        }
+        .cal-table th {
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 1px;
+            font-weight: 500;
+        }
+        .cal-table td:first-child, .cal-table th:first-child {
+            text-align: left;
+        }
+        .cal-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+        .cal-stat {
+            display: inline-block;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 12px 20px;
+            border-radius: 3px;
+            margin-right: 12px;
+            margin-bottom: 8px;
+        }
+        .cal-stat .label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+        }
+        .cal-stat .value {
+            font-size: 20px;
+            color: var(--text-primary);
+            margin-top: 4px;
+        }
+        .accuracy-good { color: var(--bullish); }
+        .accuracy-ok { color: var(--neutral); }
+        .accuracy-bad { color: var(--bearish); }
+        .empty-state {
+            color: var(--text-muted);
+            font-style: italic;
+            padding: 24px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="cal-container">
+        <div class="cal-header">
+            <h1>IMPACT SCORE CALIBRATION</h1>
+            <a href="/" class="cal-back">&larr; BACK TO FEED</a>
+        </div>
+
+        <div id="summary-section" class="cal-section">
+            <h2>Tracking Summary</h2>
+            <div id="summary-stats"></div>
+        </div>
+
+        <div class="cal-section">
+            <h2>Average Market Move by Impact Score</h2>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
+                Shows average absolute SPY % move at T+5min, T+15min, T+1hr after headlines with each impact score.
+                Higher impact scores should correspond to larger market moves.
+            </p>
+            <div id="impact-table"></div>
+        </div>
+
+        <div class="cal-section">
+            <h2>Sentiment Direction Accuracy</h2>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
+                Shows how often the predicted sentiment direction matched actual SPY movement at T+1hr.
+            </p>
+            <div id="sentiment-table"></div>
+        </div>
+    </div>
+    <script src="/static/js/calibration.js"></script>
+</body>
+</html>

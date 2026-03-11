@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     # Twitter
     twitter_enabled: bool = False  # Off by default until configured
 
+    # Market context
+    market_context_enabled: bool = True
+    market_context_refresh_interval: int = 120  # seconds (2 min)
+
+    # Move tracking
+    move_tracking_enabled: bool = True
+    move_tracker_poll_interval: int = 60  # seconds
+
     # Paths
     feeds_config: str = "config/feeds.yaml"
     twitter_config: str = "config/twitter_accounts.yaml"

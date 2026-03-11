@@ -44,6 +44,10 @@ class MarketTerminal {
         // Load initial data
         this.loadInitialData();
 
+        // Load market context ticker bar
+        this.loadMarketContext();
+        setInterval(() => this.loadMarketContext(), 120000); // every 2 min
+
         // Start clock
         this.updateClock();
         setInterval(() => this.updateClock(), 1000);
@@ -130,6 +134,42 @@ class MarketTerminal {
         this.feed.renderAll(filtered);
     }
 
+    async loadMarketContext() {
+        try {
+            const response = await fetch('/api/market-context');
+            const data = await response.json();
+            this.renderMarketTicker(data);
+        } catch (e) {
+            // silent
+        }
+    }
+
+    renderMarketTicker(data) {
+        const bar = document.getElementById('market-ticker-bar');
+        if (!bar || !data || data.status) return;
+        const items = [];
+        if (data.spy_price) {
+            const pct = this.formatPct(data.spy_change_pct);
+            const cls = (data.spy_change_pct || 0) >= 0 ? 'ticker-up' : 'ticker-down';
+            items.push(`<span class="${cls}">SPY ${data.spy_price.toFixed(1)} ${pct}</span>`);
+        }
+        if (data.vix_price) {
+            const cls = data.vix_price >= 25 ? 'ticker-warn' : '';
+            items.push(`<span class="${cls}">VIX ${data.vix_price.toFixed(1)}</span>`);
+        }
+        if (data.dxy_price) items.push(`<span>DXY ${data.dxy_price.toFixed(1)}</span>`);
+        if (data.gold_price) items.push(`<span>GOLD ${data.gold_price.toFixed(0)}</span>`);
+        if (data.oil_price) items.push(`<span>OIL ${data.oil_price.toFixed(1)}</span>`);
+        if (data.btc_price) items.push(`<span>BTC ${(data.btc_price/1000).toFixed(1)}K</span>`);
+        bar.innerHTML = items.join('<span class="ticker-sep">|</span>');
+    }
+
+    formatPct(pct) {
+        if (pct == null) return '';
+        const sign = pct >= 0 ? '+' : '';
+        return `(${sign}${pct.toFixed(2)}%)`;
+    }
+
     updateClock() {
         const el = document.getElementById('clock');
         if (el) {
@@ -139,6 +179,7 @@ class MarketTerminal {
                 minute: '2-digit',
                 second: '2-digit',
                 hour12: false,
+                timeZone: 'America/New_York',
                 timeZoneName: 'short',
             });
         }

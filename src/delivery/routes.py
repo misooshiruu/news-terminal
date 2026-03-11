@@ -58,6 +58,39 @@ async def stats(request: Request):
     return await db.get_today_stats()
 
 
+@router.get("/api/market-context")
+async def get_market_context(request: Request):
+    """Return the current market snapshot."""
+    mc = getattr(request.app.state, "market_context", None)
+    if mc:
+        snap = mc.snapshot_to_dict()
+        return snap if snap else {"status": "no_data"}
+    return {"status": "disabled"}
+
+
+@router.get("/api/calibration/summary")
+async def calibration_summary(request: Request):
+    db = request.app.state.db
+    return await db.get_calibration_summary()
+
+
+@router.get("/api/calibration/by-impact")
+async def calibration_by_impact(request: Request):
+    db = request.app.state.db
+    return await db.get_calibration_by_impact()
+
+
+@router.get("/api/calibration/by-sentiment")
+async def calibration_by_sentiment(request: Request):
+    db = request.app.state.db
+    return await db.get_calibration_by_sentiment()
+
+
+@router.get("/calibration")
+async def calibration_page():
+    return FileResponse("frontend/calibration.html")
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     ws_manager = websocket.app.state.ws_manager

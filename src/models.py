@@ -113,4 +113,43 @@ CREATE TABLE IF NOT EXISTS source_state (
     error_count INTEGER DEFAULT 0,
     is_healthy BOOLEAN DEFAULT 1
 );
+
+CREATE TABLE IF NOT EXISTS market_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    captured_at TIMESTAMP NOT NULL,
+    spy_price REAL,
+    spy_change_pct REAL,
+    vix_price REAL,
+    dxy_price REAL,
+    btc_price REAL,
+    gold_price REAL,
+    oil_price REAL,
+    market_status TEXT,
+    upcoming_events TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshots_time ON market_snapshots(captured_at DESC);
+
+CREATE TABLE IF NOT EXISTS headline_market_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    headline_id INTEGER NOT NULL REFERENCES headlines(id),
+    snapshot_id INTEGER REFERENCES market_snapshots(id),
+    analyzed_at TIMESTAMP NOT NULL,
+    price_spy_t0 REAL,
+    price_vix_t0 REAL,
+    price_spy_t5 REAL,
+    price_vix_t5 REAL,
+    checked_t5_at TIMESTAMP,
+    price_spy_t15 REAL,
+    price_vix_t15 REAL,
+    checked_t15_at TIMESTAMP,
+    price_spy_t60 REAL,
+    price_vix_t60 REAL,
+    checked_t60_at TIMESTAMP,
+    is_complete BOOLEAN DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_moves_headline ON headline_market_moves(headline_id);
+CREATE INDEX IF NOT EXISTS idx_moves_complete ON headline_market_moves(is_complete);
+CREATE INDEX IF NOT EXISTS idx_moves_analyzed ON headline_market_moves(analyzed_at);
 """

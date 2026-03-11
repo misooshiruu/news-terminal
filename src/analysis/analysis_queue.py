@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
+from typing import Optional
 
 import anthropic
 
@@ -38,16 +40,26 @@ class RateLimiter:
 class AnalysisConsumer:
     """Reads headlines from the analysis queue and processes them with Claude."""
 
-    def __init__(self, settings: Settings, db: Database, ws_manager: WebSocketManager):
+    def __init__(
+        self,
+        settings: Settings,
+        db: Database,
+        ws_manager: WebSocketManager,
+        market_context=None,
+    ):
         self.settings = settings
         self.db = db
         self.ws_manager = ws_manager
+        self.market_context = market_context
         self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.rate_limiter = RateLimiter(
             max_calls=settings.analysis_rate_limit,
             period=60.0,
         )
         self.semaphore = asyncio.Semaphore(settings.max_concurrent_analyses)
+        # Cache to avoid duplicate snapshot inserts within the same refresh window
+        self._last_snapshot_id: Optional[int] = None
+        self._last_snapshot_ts: Optional[str] = None
 
     async def run(self, queue: asyncio.Queue):
         """Main consumer loop."""
@@ -72,16 +84,29 @@ class AnalysisConsumer:
             await self.rate_limiter.acquire()
 
             try:
+                # Get market context for prompt injection
+                context_str = ""
+                if self.market_context:
+                    context_str = self.market_context.format_for_prompt()
+
                 result = await analyze_headline(
                     client=self.client,
                     model=self.settings.claude_model,
                     source=headline.source,
                     title=headline.title,
                     description=headline.description,
+                    market_context=context_str,
                 )
 
-                # Update database
+                # Update database with analysis result
                 await self.db.update_analysis(headline.id, result)
+
+                # Save market snapshot and link to headline
+                snapshot_id = await self._save_snapshot(headline.id)
+
+                # Record move tracking baseline (T+0)
+                if self.settings.move_tracking_enabled:
+                    await self._record_move_baseline(headline.id, snapshot_id)
 
                 # Broadcast analysis update to WebSocket clients
                 await self.ws_manager.broadcast_analysis_update(
@@ -103,3 +128,47 @@ class AnalysisConsumer:
 
             except Exception as e:
                 logger.error(f"Failed to analyze headline {headline.id}: {e}")
+
+    async def _save_snapshot(self, headline_id: int) -> Optional[int]:
+        """Save market snapshot and link it to the headline. Reuses cached ID if unchanged."""
+        if not self.market_context:
+            return None
+
+        snapshot = self.market_context.get_snapshot()
+        if not snapshot:
+            return None
+
+        snapshot_dict = snapshot.to_dict()
+        snapshot_ts = snapshot_dict.get("timestamp")
+
+        # Reuse cached snapshot ID if it's the same refresh cycle
+        if self._last_snapshot_ts == snapshot_ts and self._last_snapshot_id:
+            snapshot_id = self._last_snapshot_id
+        else:
+            snapshot_id = await self.db.insert_market_snapshot(snapshot_dict)
+            self._last_snapshot_id = snapshot_id
+            self._last_snapshot_ts = snapshot_ts
+
+        await self.db.link_headline_snapshot(headline_id, snapshot_id)
+        return snapshot_id
+
+    async def _record_move_baseline(self, headline_id: int, snapshot_id: Optional[int]):
+        """Record T+0 SPY/VIX prices for post-headline move tracking."""
+        try:
+            spy_t0 = None
+            vix_t0 = None
+            if self.market_context:
+                snap = self.market_context.get_snapshot()
+                if snap:
+                    spy_t0 = snap.spy_price
+                    vix_t0 = snap.vix_price
+
+            await self.db.insert_move_baseline(
+                headline_id=headline_id,
+                snapshot_id=snapshot_id,
+                analyzed_at=datetime.utcnow().isoformat(),
+                spy_t0=spy_t0,
+                vix_t0=vix_t0,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record move baseline for headline {headline_id}: {e}")

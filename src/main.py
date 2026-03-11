@@ -66,11 +66,39 @@ async def lifespan(app: FastAPI):
     except ImportError:
         logger.warning("Ingestion consumer not yet implemented, skipping")
 
+    # Market context provider (fetches live SPY, VIX, etc. from Finnhub)
+    market_context = None
+    if settings.market_context_enabled and settings.finnhub_api_key:
+        try:
+            from src.market_data.market_context import MarketContextProvider
+            market_context = MarketContextProvider(settings)
+            await market_context.start()
+            tasks.append(asyncio.create_task(market_context.run()))
+            app.state.market_context = market_context
+            logger.info("Market context provider started")
+        except ImportError:
+            logger.warning("Market context provider not available, skipping")
+
+    # Move tracker (records post-headline market moves for calibration)
+    move_tracker = None
+    if settings.move_tracking_enabled and settings.finnhub_api_key:
+        try:
+            from src.market_data.move_tracker import MoveTracker
+            move_tracker = MoveTracker(settings, db, market_context)
+            tasks.append(asyncio.create_task(move_tracker.run()))
+            app.state.move_tracker = move_tracker
+            logger.info("Move tracker started")
+        except ImportError:
+            logger.warning("Move tracker not available, skipping")
+
     # Import and start analysis consumer (Milestone 4)
     if settings.analysis_enabled and settings.anthropic_api_key:
         try:
             from src.analysis.analysis_queue import AnalysisConsumer
-            analysis_consumer = AnalysisConsumer(settings, db, ws_manager)
+            analysis_consumer = AnalysisConsumer(
+                settings, db, ws_manager,
+                market_context=market_context,
+            )
             tasks.append(asyncio.create_task(
                 analysis_consumer.run(analysis_queue)
             ))
@@ -87,6 +115,8 @@ async def lifespan(app: FastAPI):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    if market_context:
+        await market_context.stop()
     await db.close()
     logger.info("Shutdown complete")
 

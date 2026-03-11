@@ -34,6 +34,19 @@ class Database:
     async def _init_schema(self):
         await self._db.executescript(SCHEMA_SQL)
         await self._db.commit()
+        await self._run_migrations()
+
+    async def _run_migrations(self):
+        """Run schema migrations for new columns on existing databases."""
+        migrations = [
+            "ALTER TABLE headlines ADD COLUMN market_context_snapshot_id INTEGER",
+        ]
+        for sql in migrations:
+            try:
+                await self._db.execute(sql)
+                await self._db.commit()
+            except Exception:
+                pass  # Column already exists
 
     async def close(self):
         if self._db:
@@ -200,6 +213,146 @@ class Database:
         )
         row = await cursor.fetchone()
         return {"total": row["total"] or 0, "analyzed": int(row["analyzed"] or 0)}
+
+    # --- Market Snapshots ---
+
+    async def insert_market_snapshot(self, snapshot_dict: dict) -> int:
+        """Insert a market snapshot and return its ID."""
+        cursor = await self._db.execute(
+            """INSERT INTO market_snapshots
+               (captured_at, spy_price, spy_change_pct, vix_price, dxy_price,
+                btc_price, gold_price, oil_price, market_status, upcoming_events)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                snapshot_dict.get("timestamp", datetime.utcnow().isoformat()),
+                snapshot_dict.get("spy_price"),
+                snapshot_dict.get("spy_change_pct"),
+                snapshot_dict.get("vix_price"),
+                snapshot_dict.get("dxy_price"),
+                snapshot_dict.get("btc_price"),
+                snapshot_dict.get("gold_price"),
+                snapshot_dict.get("oil_price"),
+                snapshot_dict.get("market_status"),
+                json.dumps(snapshot_dict.get("upcoming_events", [])),
+            ),
+        )
+        await self._db.commit()
+        return cursor.lastrowid
+
+    async def link_headline_snapshot(self, headline_id: int, snapshot_id: int):
+        """Associate a headline with the market snapshot used during its analysis."""
+        await self._db.execute(
+            "UPDATE headlines SET market_context_snapshot_id = ? WHERE id = ?",
+            (snapshot_id, headline_id),
+        )
+        await self._db.commit()
+
+    # --- Move Tracking ---
+
+    async def insert_move_baseline(
+        self, headline_id: int, snapshot_id: Optional[int],
+        analyzed_at: str, spy_t0: Optional[float], vix_t0: Optional[float],
+    ):
+        """Insert the T+0 baseline for market move tracking."""
+        await self._db.execute(
+            """INSERT INTO headline_market_moves
+               (headline_id, snapshot_id, analyzed_at, price_spy_t0, price_vix_t0)
+               VALUES (?, ?, ?, ?, ?)""",
+            (headline_id, snapshot_id, analyzed_at, spy_t0, vix_t0),
+        )
+        await self._db.commit()
+
+    async def get_pending_move_checks(self) -> list[dict]:
+        """Get headlines that need move tracking updates."""
+        cursor = await self._db.execute(
+            """SELECT m.id, m.headline_id, m.analyzed_at,
+                      m.price_spy_t0, m.price_vix_t0,
+                      m.checked_t5_at, m.checked_t15_at, m.checked_t60_at,
+                      h.impact_score, h.sentiment
+               FROM headline_market_moves m
+               JOIN headlines h ON h.id = m.headline_id
+               WHERE m.is_complete = 0
+               ORDER BY m.analyzed_at ASC
+               LIMIT 50"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def update_move_checkpoint(
+        self, move_id: int, checkpoint: str,
+        spy_price: Optional[float], vix_price: Optional[float],
+    ):
+        """Update a specific checkpoint (t5, t15, t60) for a move record."""
+        spy_col = f"price_spy_{checkpoint}"
+        vix_col = f"price_vix_{checkpoint}"
+        checked_col = f"checked_{checkpoint}_at"
+        await self._db.execute(
+            f"""UPDATE headline_market_moves
+                SET {spy_col} = ?, {vix_col} = ?, {checked_col} = ?
+                WHERE id = ?""",
+            (spy_price, vix_price, datetime.utcnow().isoformat(), move_id),
+        )
+        # Check if all checkpoints are now filled
+        await self._db.execute(
+            """UPDATE headline_market_moves SET is_complete = 1
+               WHERE id = ? AND checked_t5_at IS NOT NULL
+               AND checked_t15_at IS NOT NULL AND checked_t60_at IS NOT NULL""",
+            (move_id,),
+        )
+        await self._db.commit()
+
+    # --- Calibration Queries ---
+
+    async def get_calibration_by_impact(self) -> list[dict]:
+        """Aggregate market moves by impact score for calibration view."""
+        cursor = await self._db.execute(
+            """SELECT
+                 h.impact_score,
+                 COUNT(*) as sample_count,
+                 AVG(ABS(m.price_spy_t5 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t5_pct,
+                 AVG(ABS(m.price_spy_t15 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t15_pct,
+                 AVG(ABS(m.price_spy_t60 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t60_pct,
+                 AVG(ABS(m.price_vix_t60 - m.price_vix_t0)) as avg_vix_move_t60
+               FROM headline_market_moves m
+               JOIN headlines h ON h.id = m.headline_id
+               WHERE m.price_spy_t0 IS NOT NULL AND m.is_complete = 1
+               GROUP BY h.impact_score
+               ORDER BY h.impact_score"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_calibration_by_sentiment(self) -> list[dict]:
+        """Check if sentiment predictions match actual market direction."""
+        cursor = await self._db.execute(
+            """SELECT
+                 h.sentiment,
+                 COUNT(*) as sample_count,
+                 SUM(CASE WHEN h.sentiment = 'bullish' AND m.price_spy_t60 > m.price_spy_t0 THEN 1
+                          WHEN h.sentiment = 'bearish' AND m.price_spy_t60 < m.price_spy_t0 THEN 1
+                          ELSE 0 END) as correct_direction,
+                 AVG((m.price_spy_t60 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_return_pct
+               FROM headline_market_moves m
+               JOIN headlines h ON h.id = m.headline_id
+               WHERE m.price_spy_t0 IS NOT NULL AND m.is_complete = 1
+                 AND h.sentiment IS NOT NULL
+               GROUP BY h.sentiment"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def get_calibration_summary(self) -> dict:
+        """Overall calibration stats."""
+        cursor = await self._db.execute(
+            """SELECT
+                 COUNT(*) as total_tracked,
+                 SUM(is_complete) as total_complete,
+                 MIN(analyzed_at) as earliest,
+                 MAX(analyzed_at) as latest
+               FROM headline_market_moves"""
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else {}
 
     # --- Helpers ---
 

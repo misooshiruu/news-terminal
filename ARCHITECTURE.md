@@ -28,17 +28,21 @@ Current Events/
 │   │   ├── newsapi_source.py # Finnhub (Milestone 7)
 │   │   ├── twitter_source.py # Twitter (Milestone 6)
 │   │   └── source_manager.py # Orchestrator + ingestion consumer
+│   ├── market_data/
+│   │   ├── market_context.py  # Finnhub quote + calendar fetcher
+│   │   └── move_tracker.py    # Post-headline SPY/VIX move tracker
 │   ├── analysis/
 │   │   ├── classifier.py     # Keyword pre-filter
-│   │   ├── claude_analyzer.py# Claude API integration
-│   │   └── analysis_queue.py # Async queue + rate limiter
+│   │   ├── claude_analyzer.py# Claude API integration (w/ market context)
+│   │   └── analysis_queue.py # Async queue + rate limiter + snapshot tracking
 │   └── delivery/
 │       ├── websocket_manager.py
 │       └── routes.py
 ├── frontend/
 │   ├── index.html
 │   ├── css/terminal.css
-│   └── js/{app,websocket,feed,filters}.js
+│   ├── calibration.html       # Calibration analytics page
+│   └── js/{app,websocket,feed,filters,calibration}.js
 ├── data/headlines.db          # SQLite (auto-created)
 ├── .env                       # API keys
 ├── requirements.txt
@@ -70,6 +74,14 @@ Current Events/
 - **[2026-03-11] Preview sandbox requires /tmp mirror**
   **Context**: macOS sandbox blocks Desktop access for preview_start. Project files must be mirrored to /tmp/market-terminal-preview/ for the preview tool.
   **Consequence**: Any source changes need to be synced to /tmp copy before preview restart.
+
+- **[2026-03-11] Market context injection into Claude prompt**
+  **Context**: Impact scores based on headline text alone miss market conditions (VIX level, what's priced in, upcoming events).
+  **Consequence**: Finnhub quotes (SPY, VIX, DXY, gold, oil, BTC) + economic calendar injected into each analysis prompt. ~3.5 req/min of Finnhub budget.
+
+- **[2026-03-11] Post-headline move tracking for calibration**
+  **Context**: No way to know if impact scores are accurate without tracking actual market moves.
+  **Consequence**: Records SPY/VIX at T+0, T+5m, T+15m, T+1hr after each analysis. Calibration page shows avg move per impact level and sentiment direction accuracy.
 
 ## Infrastructure
 - **Runtime**: Python 3.9+ with asyncio

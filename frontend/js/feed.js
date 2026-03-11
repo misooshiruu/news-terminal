@@ -200,12 +200,18 @@ class FeedRenderer {
 
     formatTime(isoString) {
         if (!isoString) return '--:--';
-        const d = new Date(isoString);
+        // Server stores UTC timestamps — append 'Z' if not present so JS parses as UTC
+        let ts = isoString;
+        if (!ts.endsWith('Z') && !ts.includes('+') && !ts.includes('-', 10)) {
+            ts = ts.replace(' ', 'T') + 'Z';
+        }
+        const d = new Date(ts);
         return d.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
             hour12: false,
+            timeZone: 'America/New_York',
         });
     }
 
