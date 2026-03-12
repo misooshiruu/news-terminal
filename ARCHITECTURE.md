@@ -42,7 +42,7 @@ Current Events/
 │   ├── index.html
 │   ├── css/terminal.css
 │   ├── calibration.html       # Calibration analytics page
-│   └── js/{app,websocket,feed,filters,calibration}.js
+│   └── js/{app,websocket,feed,filters,calibration,ticker-names}.js
 ├── data/headlines.db          # SQLite (auto-created)
 ├── .env                       # API keys
 ├── requirements.txt
@@ -82,6 +82,10 @@ Current Events/
 - **[2026-03-11] Post-headline move tracking for calibration**
   **Context**: No way to know if impact scores are accurate without tracking actual market moves.
   **Consequence**: Records SPY/VIX at T+0, T+5m, T+15m, T+1hr after each analysis. Calibration page shows avg move per impact level and sentiment direction accuracy.
+
+- **[2026-03-12] Per-asset directional signals instead of generic sentiment**
+  **Context**: Single bullish/bearish/neutral label too vague for investment decisions — doesn't say what to trade or which direction.
+  **Consequence**: Claude now returns 1-5 directional signals per headline (ticker + direction + magnitude + explanation). Frontend renders as colored tags with hover tooltips. Old "sentiment" field kept for card borders and calibration backward compat.
 
 ## Infrastructure
 - **Runtime**: Python 3.9+ with asyncio
