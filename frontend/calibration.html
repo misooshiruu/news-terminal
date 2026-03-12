@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calibration - Market Terminal</title>
-    <link rel="stylesheet" href="/static/css/terminal.css">
+    <link rel="stylesheet" href="/static/css/terminal.css?v=4">
     <style>
         body { overflow: auto; }
         .cal-container {
@@ -117,13 +117,23 @@
         </div>
 
         <div class="cal-section">
-            <h2>Sentiment Direction Accuracy</h2>
+            <h2>Signal Direction Accuracy</h2>
             <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                Shows how often the predicted sentiment direction matched actual SPY movement at T+1hr.
+                For verifiable tickers (SPY/SPX/QQQ checked against SPY price, VIX/UVXY checked against VIX price),
+                shows how often the predicted direction (&#8593;/&#8595;) matched actual movement at T+1hr.
+            </p>
+            <div id="signal-table"></div>
+        </div>
+
+        <div class="cal-section">
+            <h2>Overall Sentiment Accuracy</h2>
+            <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
+                Overall bullish/bearish/neutral prediction accuracy. Sentiment is derived from the dominant
+                signal direction for each headline.
             </p>
             <div id="sentiment-table"></div>
         </div>
     </div>
-    <script src="/static/js/calibration.js"></script>
+    <script src="/static/js/calibration.js?v=4"></script>
 </body>
 </html>

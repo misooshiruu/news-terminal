@@ -354,6 +354,61 @@ class Database:
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
+    async def get_calibration_by_signals(self) -> list[dict]:
+        """Check directional signal accuracy for verifiable tickers (SPY/VIX).
+
+        Uses json_each() to unpack the signals JSON array stored in each
+        headline row.  Only signals referencing SPY-family or VIX-family
+        tickers are included because those are the assets we actually track
+        prices for in headline_market_moves.
+        """
+        cursor = await self._db.execute(
+            """SELECT
+                 json_extract(j.value, '$.ticker') as ticker,
+                 COUNT(*) as sample_count,
+                 SUM(CASE
+                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
+                          AND json_extract(j.value, '$.direction') = 'up'
+                          AND m.price_spy_t60 > m.price_spy_t0 THEN 1
+                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
+                          AND json_extract(j.value, '$.direction') = 'down'
+                          AND m.price_spy_t60 < m.price_spy_t0 THEN 1
+                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
+                          AND json_extract(j.value, '$.direction') = 'up'
+                          AND m.price_vix_t60 > m.price_vix_t0 THEN 1
+                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
+                          AND json_extract(j.value, '$.direction') = 'down'
+                          AND m.price_vix_t60 < m.price_vix_t0 THEN 1
+                     ELSE 0
+                 END) as correct_count,
+                 SUM(CASE WHEN json_extract(j.value, '$.direction')='up'
+                          THEN 1 ELSE 0 END) as up_predictions,
+                 SUM(CASE WHEN json_extract(j.value, '$.direction')='down'
+                          THEN 1 ELSE 0 END) as down_predictions,
+                 SUM(CASE WHEN json_extract(j.value, '$.magnitude')=2
+                          THEN 1 ELSE 0 END) as strong_signals,
+                 AVG(CASE
+                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
+                         THEN (m.price_spy_t60 - m.price_spy_t0)
+                              / NULLIF(m.price_spy_t0, 0) * 100
+                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
+                         THEN (m.price_vix_t60 - m.price_vix_t0)
+                 END) as avg_actual_move
+               FROM headline_market_moves m
+               JOIN headlines h ON h.id = m.headline_id
+               , json_each(h.signals) j
+               WHERE m.is_complete = 1
+                 AND m.price_spy_t0 IS NOT NULL
+                 AND h.signals IS NOT NULL
+                 AND h.signals != '[]'
+                 AND json_extract(j.value, '$.ticker')
+                     IN ('SPY','SPX','QQQ','VIX','UVXY')
+               GROUP BY ticker
+               ORDER BY sample_count DESC"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
     async def get_calibration_summary(self) -> dict:
         """Overall calibration stats."""
         cursor = await self._db.execute(

@@ -87,6 +87,14 @@ Current Events/
   **Context**: Single bullish/bearish/neutral label too vague for investment decisions — doesn't say what to trade or which direction.
   **Consequence**: Claude now returns 1-5 directional signals per headline (ticker + direction + magnitude + explanation). Frontend renders as colored tags with hover tooltips. Old "sentiment" field kept for card borders and calibration backward compat.
 
+- **[2026-03-12] JS-driven fixed-position tooltips instead of CSS ::after**
+  **Context**: Pure CSS tooltips (`::after` pseudo-element with `position: absolute`) were clipped by the scroll container's `overflow-y: auto`.
+  **Consequence**: Replaced with a single fixed-position DOM element positioned via JS `getBoundingClientRect()`. Auto-flips below element when near viewport top. Event delegation via `mouseover`/`mouseout` on document.
+
+- **[2026-03-12] Signal-level calibration for verifiable tickers**
+  **Context**: Original calibration only tracked overall sentiment (bullish/bearish) vs SPY direction. With directional signals, we can measure per-ticker accuracy.
+  **Consequence**: New `/api/calibration/by-signals` endpoint uses `json_each()` to unpack signals and validate SPY/SPX/QQQ/VIX/UVXY predictions against actual T+1hr price movements. Calibration page shows signal accuracy table alongside existing impact + sentiment tables.
+
 ## Infrastructure
 - **Runtime**: Python 3.9+ with asyncio
 - **Server**: uvicorn + FastAPI on port 8000

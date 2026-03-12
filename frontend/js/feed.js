@@ -256,3 +256,55 @@ class FeedRenderer {
             .join(' ');
     }
 }
+
+// ── Tooltip (fixed-position, avoids scroll-container clipping) ──
+(function() {
+    const tip = document.createElement('div');
+    tip.className = 'tooltip-popup';
+    document.body.appendChild(tip);
+
+    let activeTarget = null;
+
+    document.addEventListener('mouseover', (e) => {
+        const target = e.target.closest('.has-tooltip');
+        if (!target || target === activeTarget) return;
+        activeTarget = target;
+
+        const text = target.getAttribute('data-tooltip');
+        if (!text) return;
+
+        tip.textContent = text;
+        tip.style.display = 'block';
+
+        const rect = target.getBoundingClientRect();
+        const tipRect = tip.getBoundingClientRect();
+
+        // Position above by default
+        let top = rect.top - tipRect.height - 6;
+        let left = rect.left + rect.width / 2 - tipRect.width / 2;
+
+        // If it would go above the viewport, show below instead
+        if (top < 4) {
+            top = rect.bottom + 6;
+        }
+
+        // Keep within horizontal bounds
+        if (left < 4) left = 4;
+        if (left + tipRect.width > window.innerWidth - 4) {
+            left = window.innerWidth - tipRect.width - 4;
+        }
+
+        tip.style.top = top + 'px';
+        tip.style.left = left + 'px';
+    });
+
+    document.addEventListener('mouseout', (e) => {
+        const target = e.target.closest('.has-tooltip');
+        if (target && target === activeTarget) {
+            const related = e.relatedTarget;
+            if (related && target.contains(related)) return;
+            activeTarget = null;
+            tip.style.display = 'none';
+        }
+    });
+})();

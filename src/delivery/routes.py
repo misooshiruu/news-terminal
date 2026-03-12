@@ -86,6 +86,12 @@ async def calibration_by_sentiment(request: Request):
     return await db.get_calibration_by_sentiment()
 
 
+@router.get("/api/calibration/by-signals")
+async def calibration_by_signals(request: Request):
+    db = request.app.state.db
+    return await db.get_calibration_by_signals()
+
+
 @router.get("/calibration")
 async def calibration_page():
     return FileResponse("frontend/calibration.html")

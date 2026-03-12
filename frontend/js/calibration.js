@@ -4,6 +4,7 @@ class CalibrationView {
     constructor() {
         this.summaryEl = document.getElementById('summary-stats');
         this.impactEl = document.getElementById('impact-table');
+        this.signalEl = document.getElementById('signal-table');
         this.sentimentEl = document.getElementById('sentiment-table');
     }
 
@@ -11,6 +12,7 @@ class CalibrationView {
         await Promise.all([
             this.loadSummary(),
             this.loadImpactData(),
+            this.loadSignalData(),
             this.loadSentimentData(),
         ]);
     }
@@ -32,6 +34,16 @@ class CalibrationView {
             this.renderImpactTable(data);
         } catch (e) {
             this.impactEl.innerHTML = '<div class="empty-state">Failed to load data</div>';
+        }
+    }
+
+    async loadSignalData() {
+        try {
+            const resp = await fetch('/api/calibration/by-signals');
+            const data = await resp.json();
+            this.renderSignalTable(data);
+        } catch (e) {
+            this.signalEl.innerHTML = '<div class="empty-state">Failed to load signal data</div>';
         }
     }
 
@@ -110,6 +122,80 @@ class CalibrationView {
 
         html += '</tbody></table>';
         this.impactEl.innerHTML = html;
+    }
+
+    renderSignalTable(data) {
+        if (!data || data.length === 0) {
+            this.signalEl.innerHTML = '<div class="empty-state">No verifiable signal data yet. Signals for SPY/SPX/QQQ/VIX/UVXY are validated against actual price movements. Data will accumulate over time.</div>';
+            return;
+        }
+
+        // Compute totals for an aggregate row
+        let totalSamples = 0, totalCorrect = 0, totalUp = 0, totalDown = 0;
+        for (const row of data) {
+            totalSamples += row.sample_count;
+            totalCorrect += row.correct_count || 0;
+            totalUp += row.up_predictions || 0;
+            totalDown += row.down_predictions || 0;
+        }
+
+        let html = `
+            <table class="cal-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Signals</th>
+                        <th>Correct Direction</th>
+                        <th>Accuracy</th>
+                        <th>Up / Down Split</th>
+                        <th>Strong (2x)</th>
+                        <th>Avg Actual Move</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+        for (const row of data) {
+            const accuracy = row.sample_count > 0
+                ? ((row.correct_count / row.sample_count) * 100).toFixed(1)
+                : 0;
+            const accClass = accuracy >= 60 ? 'accuracy-good' : accuracy >= 45 ? 'accuracy-ok' : 'accuracy-bad';
+            const moveStr = row.avg_actual_move != null
+                ? (row.ticker === 'VIX' || row.ticker === 'UVXY'
+                    ? (row.avg_actual_move >= 0 ? '+' : '') + row.avg_actual_move.toFixed(2) + ' pts'
+                    : this.fmtPct(row.avg_actual_move, true))
+                : '-';
+
+            html += `
+                <tr>
+                    <td style="font-weight:600; color:var(--accent)">${row.ticker}</td>
+                    <td>${row.sample_count}</td>
+                    <td>${row.correct_count || 0} / ${row.sample_count}</td>
+                    <td><span class="${accClass}">${accuracy}%</span></td>
+                    <td>${row.up_predictions || 0} / ${row.down_predictions || 0}</td>
+                    <td>${row.strong_signals || 0}</td>
+                    <td>${moveStr}</td>
+                </tr>`;
+        }
+
+        // Aggregate row
+        if (data.length > 1) {
+            const totalAcc = totalSamples > 0
+                ? ((totalCorrect / totalSamples) * 100).toFixed(1) : 0;
+            const totalAccClass = totalAcc >= 60 ? 'accuracy-good' : totalAcc >= 45 ? 'accuracy-ok' : 'accuracy-bad';
+            html += `
+                <tr style="border-top:2px solid var(--border-light)">
+                    <td style="font-weight:600; color:var(--text-muted)">ALL</td>
+                    <td>${totalSamples}</td>
+                    <td>${totalCorrect} / ${totalSamples}</td>
+                    <td><span class="${totalAccClass}">${totalAcc}%</span></td>
+                    <td>${totalUp} / ${totalDown}</td>
+                    <td>-</td>
+                    <td>-</td>
+                </tr>`;
+        }
+
+        html += '</tbody></table>';
+        this.signalEl.innerHTML = html;
     }
 
     renderSentimentTable(data) {

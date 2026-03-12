@@ -26,8 +26,14 @@ twscrape-based polling of financial Twitter accounts (@DeItaone, @FirstSquawk, T
 ### Milestone 7: Finnhub API + Hardening — Not Started
 Finnhub news API source, error recovery, graceful source degradation, startup validation script.
 
+### Milestone 5.5: Market Context + Calibration — Done
+Live market data injection into Claude's analysis prompt (SPY, VIX, DXY, gold, oil, BTC via Finnhub). Post-headline move tracking at T+5m, T+15m, T+1hr for impact score calibration. Calibration dashboard page with per-impact-level avg moves and sentiment direction accuracy. Market ticker bar in header. Headline timestamps fixed to ET.
+
+### Milestone 5.6: Directional Signals + Enhanced Calibration — Done
+Replaced generic bullish/bearish/neutral sentiment with per-asset directional signals (1-5 per headline). Each signal has ticker, direction (up/down), magnitude (1-2), and explanation. Frontend renders colored signal tags (green ↑, red ↓) with hover tooltips showing full ticker name + rationale. Ticker name lookup table (~120 entries). Calibration page enhanced with signal-level accuracy tracking for verifiable tickers (SPY/VIX). JS-based tooltips replace CSS `::after` to avoid scroll-container clipping.
+
 ## Current Milestone Notes
-Milestones 1-5 complete and verified running. 12 RSS sources active, Claude analysis (claude-3-haiku-20240307) producing sentiment/impact/tickers/summaries in real-time. Dashboard fully functional with live WebSocket feed and working filters.
+Milestones 1-5.6 complete. Signal calibration data will accumulate as new headlines with directional signals complete their 1-hour tracking cycle during market hours.
 
 Next up: Milestone 6 (Twitter) and Milestone 7 (Finnhub + hardening).
 
