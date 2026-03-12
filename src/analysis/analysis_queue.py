@@ -118,6 +118,7 @@ class AnalysisConsumer:
                         "tickers": result.tickers,
                         "asset_classes": result.asset_classes,
                         "summary": result.summary,
+                        "signals": [s.model_dump() for s in result.signals],
                     },
                 )
 

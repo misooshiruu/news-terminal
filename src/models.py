@@ -17,14 +17,23 @@ class RawHeadline(BaseModel):
     published_at: Optional[datetime] = None
 
 
+class DirectionalSignal(BaseModel):
+    """A single per-asset directional impact signal."""
+    ticker: str          # e.g. "CL", "UAL", "SPY"
+    direction: str       # "up" or "down"
+    magnitude: int = 1   # 1 = slight, 2 = strong
+    explanation: str = "" # e.g. "Lower fuel costs benefit airlines"
+
+
 class AnalysisResult(BaseModel):
     """Result from Claude analysis."""
-    sentiment: str = "neutral"  # bullish, bearish, neutral
+    sentiment: str = "neutral"  # bullish, bearish, neutral (kept for card borders + calibration)
     impact_score: int = 1  # 1-5
     categories: list[str] = Field(default_factory=list)
     tickers: list[str] = Field(default_factory=list)
     asset_classes: list[str] = Field(default_factory=list)
     summary: str = ""
+    signals: list[DirectionalSignal] = Field(default_factory=list)
 
 
 class Headline(BaseModel):
@@ -45,6 +54,7 @@ class Headline(BaseModel):
     categories: list[str] = Field(default_factory=list)
     tickers: list[str] = Field(default_factory=list)
     asset_classes: list[str] = Field(default_factory=list)
+    signals: list[dict] = Field(default_factory=list)
     analysis_summary: Optional[str] = None
     analyzed_at: Optional[datetime] = None
 
@@ -68,6 +78,7 @@ class Headline(BaseModel):
             "categories": self.categories,
             "tickers": self.tickers,
             "asset_classes": self.asset_classes,
+            "signals": self.signals,
             "analysis_summary": self.analysis_summary,
             "is_analyzed": self.is_analyzed,
             "is_market_moving": self.is_market_moving,
@@ -93,6 +104,7 @@ CREATE TABLE IF NOT EXISTS headlines (
     categories TEXT,
     tickers TEXT,
     asset_classes TEXT,
+    signals TEXT,
     analysis_summary TEXT,
     analyzed_at TIMESTAMP,
 

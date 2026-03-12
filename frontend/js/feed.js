@@ -64,11 +64,16 @@ class FeedRenderer {
             impactBadge.textContent = analysis.impact_score;
         }
 
-        // Update tags
+        // Update tags with directional signals
         const tagsContainer = card.querySelector('.headline-tags');
         if (tagsContainer) {
             tagsContainer.innerHTML = '';
-            if (analysis.tickers) {
+
+            if (analysis.signals && analysis.signals.length > 0) {
+                analysis.signals.forEach(sig => {
+                    tagsContainer.appendChild(this.createSignalTag(sig));
+                });
+            } else if (analysis.tickers) {
                 analysis.tickers.forEach(t => {
                     const tag = document.createElement('span');
                     tag.className = 'tag ticker';
@@ -76,6 +81,7 @@ class FeedRenderer {
                     tagsContainer.appendChild(tag);
                 });
             }
+
             if (analysis.categories) {
                 analysis.categories.forEach(c => {
                     const tag = document.createElement('span');
@@ -166,10 +172,16 @@ class FeedRenderer {
         }
         card.appendChild(title);
 
-        // Tags
+        // Directional signals + category tags
         const tags = document.createElement('div');
         tags.className = 'headline-tags';
-        if (h.tickers && h.tickers.length > 0) {
+
+        if (h.signals && h.signals.length > 0) {
+            h.signals.forEach(sig => {
+                tags.appendChild(this.createSignalTag(sig));
+            });
+        } else if (h.tickers && h.tickers.length > 0) {
+            // Fallback for old headlines without signals
             h.tickers.forEach(t => {
                 const tag = document.createElement('span');
                 tag.className = 'tag ticker';
@@ -177,6 +189,7 @@ class FeedRenderer {
                 tags.appendChild(tag);
             });
         }
+
         if (h.categories && h.categories.length > 0) {
             h.categories.forEach(c => {
                 const tag = document.createElement('span');
@@ -196,6 +209,22 @@ class FeedRenderer {
         }
 
         return card;
+    }
+
+    createSignalTag(sig) {
+        const tag = document.createElement('span');
+        const arrow = sig.direction === 'up' ? '\u2191' : '\u2193';
+        const arrowStr = sig.magnitude >= 2 ? arrow + arrow : arrow;
+        tag.className = `signal-tag signal-${sig.direction}`;
+        tag.textContent = `${sig.ticker} ${arrowStr}`;
+
+        // Build tooltip: full ticker name + explanation
+        const fullName = (typeof TICKER_NAMES !== 'undefined' && TICKER_NAMES[sig.ticker]) || sig.ticker;
+        const tooltipText = sig.explanation ? `${fullName} \u2014 ${sig.explanation}` : fullName;
+        tag.setAttribute('data-tooltip', tooltipText);
+        tag.classList.add('has-tooltip');
+
+        return tag;
     }
 
     formatTime(isoString) {

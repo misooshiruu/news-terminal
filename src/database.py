@@ -40,6 +40,7 @@ class Database:
         """Run schema migrations for new columns on existing databases."""
         migrations = [
             "ALTER TABLE headlines ADD COLUMN market_context_snapshot_id INTEGER",
+            "ALTER TABLE headlines ADD COLUMN signals TEXT",
         ]
         for sql in migrations:
             try:
@@ -113,17 +114,29 @@ class Database:
     # --- Update analysis ---
 
     async def update_analysis(self, headline_id: int, result: AnalysisResult):
+        # Derive tickers from signals if signals are present
+        tickers = result.tickers
+        if result.signals and not tickers:
+            tickers = [s.ticker for s in result.signals]
+
+        signals_json = (
+            json.dumps([s.model_dump() for s in result.signals])
+            if result.signals else None
+        )
+
         await self._db.execute(
             """UPDATE headlines SET
                sentiment = ?, impact_score = ?, categories = ?, tickers = ?,
-               asset_classes = ?, analysis_summary = ?, analyzed_at = ?, is_analyzed = 1
+               asset_classes = ?, signals = ?, analysis_summary = ?,
+               analyzed_at = ?, is_analyzed = 1
                WHERE id = ?""",
             (
                 result.sentiment,
                 result.impact_score,
                 json.dumps(result.categories),
-                json.dumps(result.tickers),
+                json.dumps(tickers),
                 json.dumps(result.asset_classes),
+                signals_json,
                 result.summary,
                 datetime.utcnow().isoformat(),
                 headline_id,
@@ -373,6 +386,7 @@ class Database:
             categories=json.loads(row["categories"]) if row["categories"] else [],
             tickers=json.loads(row["tickers"]) if row["tickers"] else [],
             asset_classes=json.loads(row["asset_classes"]) if row["asset_classes"] else [],
+            signals=json.loads(row["signals"]) if row["signals"] else [],
             analysis_summary=row["analysis_summary"],
             analyzed_at=datetime.fromisoformat(row["analyzed_at"]) if row["analyzed_at"] else None,
             is_analyzed=bool(row["is_analyzed"]),
