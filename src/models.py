@@ -164,4 +164,58 @@ CREATE TABLE IF NOT EXISTS headline_market_moves (
 CREATE INDEX IF NOT EXISTS idx_moves_headline ON headline_market_moves(headline_id);
 CREATE INDEX IF NOT EXISTS idx_moves_complete ON headline_market_moves(is_complete);
 CREATE INDEX IF NOT EXISTS idx_moves_analyzed ON headline_market_moves(analyzed_at);
+
+CREATE TABLE IF NOT EXISTS signal_moves (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    headline_id INTEGER NOT NULL REFERENCES headlines(id),
+    ticker TEXT NOT NULL,
+    yf_symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    magnitude INTEGER DEFAULT 1,
+    analyzed_at TIMESTAMP NOT NULL,
+    baseline_price REAL,
+    price_t60 REAL,
+    price_t4h REAL,
+    checked_t60_at TIMESTAMP,
+    checked_t4h_at TIMESTAMP,
+    is_complete BOOLEAN DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_signal_moves_headline ON signal_moves(headline_id);
+CREATE INDEX IF NOT EXISTS idx_signal_moves_complete ON signal_moves(is_complete);
+CREATE INDEX IF NOT EXISTS idx_signal_moves_ticker ON signal_moves(ticker);
 """
+
+
+# Ticker symbol → yfinance symbol mapping.
+# Equities/ETFs use the same symbol; only overrides needed here.
+TICKER_TO_YF = {
+    # Commodity futures
+    "CL": "CL=F",
+    "GC": "GC=F",
+    "SI": "SI=F",
+    "NG": "NG=F",
+    "HG": "HG=F",
+    "ZW": "ZW=F",
+    "ZC": "ZC=F",
+    "ZS": "ZS=F",
+    "PL": "PL=F",
+    # Indices
+    "VIX": "^VIX",
+    "SPX": "^GSPC",
+    # FX
+    "DX": "DX-Y.NYB",
+    "EURUSD": "EURUSD=X",
+    "USDJPY": "USDJPY=X",
+    "GBPUSD": "GBPUSD=X",
+    "USDCNH": "CNY=X",
+    # Crypto
+    "BTC": "BTC-USD",
+    "ETH": "ETH-USD",
+    "SOL": "SOL-USD",
+}
+
+
+def ticker_to_yf_symbol(ticker: str) -> str:
+    """Convert a signal ticker to a yfinance symbol."""
+    return TICKER_TO_YF.get(ticker.upper(), ticker.upper())

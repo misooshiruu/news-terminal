@@ -8,6 +8,8 @@ from typing import Optional
 
 import aiohttp
 
+from src.models import ticker_to_yf_symbol
+
 logger = logging.getLogger(__name__)
 
 # Finnhub symbol map — VIX removed, fetched via yfinance instead
@@ -285,3 +287,45 @@ class MarketContextProvider:
         lines.append("=" * 30)
 
         return "\n".join(lines)
+
+
+async def fetch_ticker_prices(tickers: list[str]) -> dict[str, Optional[float]]:
+    """Batch-fetch current prices for a list of signal tickers via yfinance.
+
+    Args:
+        tickers: list of signal tickers (e.g. ["CL", "XLE", "UAL", "SPY"])
+
+    Returns:
+        dict mapping ticker -> price (or None if fetch failed)
+    """
+    if not tickers:
+        return {}
+
+    # Map signal tickers to yfinance symbols
+    yf_symbols = {t: ticker_to_yf_symbol(t) for t in tickers}
+    unique_symbols = list(set(yf_symbols.values()))
+
+    loop = asyncio.get_running_loop()
+
+    def _batch_get():
+        import yfinance as yf
+        prices = {}
+        for sym in unique_symbols:
+            try:
+                t = yf.Ticker(sym)
+                prices[sym] = t.fast_info.last_price
+            except Exception:
+                prices[sym] = None
+        return prices
+
+    try:
+        symbol_prices = await loop.run_in_executor(_yf_executor, _batch_get)
+    except Exception as e:
+        logger.error(f"Batch price fetch error: {e}")
+        return {t: None for t in tickers}
+
+    # Map back from yfinance symbols to original tickers
+    result = {}
+    for ticker, yf_sym in yf_symbols.items():
+        result[ticker] = symbol_prices.get(yf_sym)
+    return result

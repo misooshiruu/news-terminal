@@ -95,6 +95,10 @@ Current Events/
   **Context**: Original calibration only tracked overall sentiment (bullish/bearish) vs SPY direction. With directional signals, we can measure per-ticker accuracy.
   **Consequence**: New `/api/calibration/by-signals` endpoint uses `json_each()` to unpack signals and validate SPY/SPX/QQQ/VIX/UVXY predictions against actual T+1hr price movements. Calibration page shows signal accuracy table alongside existing impact + sentiment tables.
 
+- **[2026-03-13] Per-signal price tracking via yfinance**
+  **Context**: Previous calibration only validated SPY/VIX signals because those were the only prices tracked. Sector-specific signals (CL, XLE, GC, etc.) were unverifiable.
+  **Consequence**: New `signal_moves` table records actual prices for every predicted ticker at T+0 (via yfinance batch fetch), then tracks at T+1hr and T+4hr. Replaces json_each() calibration with direct per-ticker accuracy. Added T+4hr checkpoint to SPY/VIX tracking too. Ticker-to-yfinance symbol mapping in `models.py` handles commodities (CL→CL=F), indices (VIX→^VIX), crypto (BTC→BTC-USD), etc.
+
 ## Infrastructure
 - **Runtime**: Python 3.9+ with asyncio
 - **Server**: uvicorn + FastAPI on port 8000

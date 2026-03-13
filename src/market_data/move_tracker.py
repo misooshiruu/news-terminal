@@ -7,22 +7,32 @@ from typing import Optional
 
 from config.settings import Settings
 from src.database import Database
+from src.market_data.market_context import fetch_ticker_prices
 
 logger = logging.getLogger(__name__)
 
-# Checkpoints: (checkpoint_name, timedelta_offset)
+# SPY/VIX checkpoints: (checkpoint_name, timedelta_offset)
 MOVE_CHECKPOINTS = [
     ("t5", timedelta(minutes=5)),
     ("t15", timedelta(minutes=15)),
     ("t60", timedelta(hours=1)),
+    ("t4h", timedelta(hours=4)),
+]
+
+# Per-signal checkpoints (only T+1hr and T+4hr — shorter intervals
+# are too noisy for individual stocks and create too many API calls)
+SIGNAL_CHECKPOINTS = [
+    ("t60", timedelta(hours=1)),
+    ("t4h", timedelta(hours=4)),
 ]
 
 
 class MoveTracker:
     """Background task that tracks actual market moves after headline analysis.
 
-    For each analyzed headline, records SPY/VIX prices at T+5min, T+15min, and T+1hr
-    to later calibrate impact score accuracy.
+    For each analyzed headline, records SPY/VIX prices at T+5min, T+15min,
+    T+1hr, and T+4hr. Also tracks per-signal ticker prices at T+1hr and T+4hr
+    to calibrate directional signal accuracy.
     """
 
     def __init__(self, settings: Settings, db: Database, market_context=None):
@@ -41,6 +51,7 @@ class MoveTracker:
             try:
                 if self._is_market_hours():
                     await self._check_pending_moves()
+                    await self._check_pending_signal_moves()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -65,7 +76,7 @@ class MoveTracker:
             return True  # Default to tracking if time check fails
 
     async def _check_pending_moves(self):
-        """Check which headlines need move tracking updates."""
+        """Check which headlines need SPY/VIX move tracking updates."""
         pending = await self.db.get_pending_move_checks()
         if not pending:
             return
@@ -98,7 +109,58 @@ class MoveTracker:
                 logger.debug(f"Error checking move {move['id']}: {e}")
 
         if updates > 0:
-            logger.info(f"Move tracker: updated {updates} checkpoints for {len(pending)} headlines")
+            logger.info(f"Move tracker: updated {updates} SPY/VIX checkpoints")
+
+    async def _check_pending_signal_moves(self):
+        """Check which per-signal moves need price updates."""
+        pending = await self.db.get_pending_signal_moves()
+        if not pending:
+            return
+
+        now = datetime.utcnow()
+
+        # Figure out which tickers need price fetches this cycle
+        tickers_needed = set()
+        actionable = []
+
+        for move in pending:
+            try:
+                analyzed_at = datetime.fromisoformat(move["analyzed_at"])
+                for checkpoint_name, offset in SIGNAL_CHECKPOINTS:
+                    checked_col = f"checked_{checkpoint_name}_at"
+                    if move.get(checked_col) is not None:
+                        continue
+                    if now >= analyzed_at + offset:
+                        tickers_needed.add(move["ticker"])
+                        actionable.append((move, checkpoint_name, offset))
+            except Exception:
+                continue
+
+        if not tickers_needed:
+            return
+
+        # Batch-fetch all needed ticker prices in one yfinance call
+        prices = await fetch_ticker_prices(list(tickers_needed))
+        updates = 0
+
+        for move, checkpoint_name, offset in actionable:
+            try:
+                price = prices.get(move["ticker"])
+                await self.db.update_signal_checkpoint(
+                    move_id=move["id"],
+                    checkpoint=checkpoint_name,
+                    price=price,
+                )
+                updates += 1
+            except Exception as e:
+                logger.debug(f"Error updating signal move {move['id']}: {e}")
+
+        if updates > 0:
+            fetched = sum(1 for p in prices.values() if p is not None)
+            logger.info(
+                f"Move tracker: updated {updates} signal checkpoints "
+                f"({fetched}/{len(tickers_needed)} tickers priced)"
+            )
 
     def _get_current_prices(self) -> tuple[Optional[float], Optional[float]]:
         """Get current SPY and VIX from the cached market snapshot."""

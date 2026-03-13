@@ -103,6 +103,7 @@ class CalibrationView {
                         <th>Avg SPY Move T+5m</th>
                         <th>Avg SPY Move T+15m</th>
                         <th>Avg SPY Move T+1h</th>
+                        <th>Avg SPY Move T+4h</th>
                         <th>Avg VIX Move T+1h</th>
                     </tr>
                 </thead>
@@ -116,6 +117,7 @@ class CalibrationView {
                     <td>${this.fmtPct(row.avg_spy_move_t5_pct)}</td>
                     <td>${this.fmtPct(row.avg_spy_move_t15_pct)}</td>
                     <td>${this.fmtPct(row.avg_spy_move_t60_pct)}</td>
+                    <td>${this.fmtPct(row.avg_spy_move_t4h_pct)}</td>
                     <td>${row.avg_vix_move_t60 != null ? row.avg_vix_move_t60.toFixed(2) : '-'}</td>
                 </tr>`;
         }
@@ -126,15 +128,17 @@ class CalibrationView {
 
     renderSignalTable(data) {
         if (!data || data.length === 0) {
-            this.signalEl.innerHTML = '<div class="empty-state">No verifiable signal data yet. Signals for SPY/SPX/QQQ/VIX/UVXY are validated against actual price movements. Data will accumulate over time.</div>';
+            this.signalEl.innerHTML = '<div class="empty-state">No signal tracking data yet. Per-ticker prices are recorded at T+0, then checked at T+1hr and T+4hr. Data will accumulate as headlines are analyzed.</div>';
             return;
         }
 
         // Compute totals for an aggregate row
-        let totalSamples = 0, totalCorrect = 0, totalUp = 0, totalDown = 0;
+        let totalSamples = 0, totalCorrectT60 = 0, totalCorrectT4h = 0;
+        let totalUp = 0, totalDown = 0;
         for (const row of data) {
             totalSamples += row.sample_count;
-            totalCorrect += row.correct_count || 0;
+            totalCorrectT60 += row.correct_t60 || 0;
+            totalCorrectT4h += row.correct_t4h || 0;
             totalUp += row.up_predictions || 0;
             totalDown += row.down_predictions || 0;
         }
@@ -145,50 +149,53 @@ class CalibrationView {
                     <tr>
                         <th>Ticker</th>
                         <th>Signals</th>
-                        <th>Correct Direction</th>
-                        <th>Accuracy</th>
-                        <th>Up / Down Split</th>
+                        <th>T+1hr Accuracy</th>
+                        <th>T+4hr Accuracy</th>
+                        <th>Up / Down</th>
                         <th>Strong (2x)</th>
-                        <th>Avg Actual Move</th>
+                        <th>Avg Move T+1hr</th>
+                        <th>Avg Move T+4hr</th>
                     </tr>
                 </thead>
                 <tbody>`;
 
         for (const row of data) {
-            const accuracy = row.sample_count > 0
-                ? ((row.correct_count / row.sample_count) * 100).toFixed(1)
-                : 0;
-            const accClass = accuracy >= 60 ? 'accuracy-good' : accuracy >= 45 ? 'accuracy-ok' : 'accuracy-bad';
-            const moveStr = row.avg_actual_move != null
-                ? (row.ticker === 'VIX' || row.ticker === 'UVXY'
-                    ? (row.avg_actual_move >= 0 ? '+' : '') + row.avg_actual_move.toFixed(2) + ' pts'
-                    : this.fmtPct(row.avg_actual_move, true))
-                : '-';
+            const accT60 = row.sample_count > 0
+                ? ((row.correct_t60 / row.sample_count) * 100).toFixed(1) : 0;
+            const accT4h = row.sample_count > 0
+                ? ((row.correct_t4h / row.sample_count) * 100).toFixed(1) : 0;
+            const accT60Class = accT60 >= 60 ? 'accuracy-good' : accT60 >= 45 ? 'accuracy-ok' : 'accuracy-bad';
+            const accT4hClass = accT4h >= 60 ? 'accuracy-good' : accT4h >= 45 ? 'accuracy-ok' : 'accuracy-bad';
 
             html += `
                 <tr>
                     <td style="font-weight:600; color:var(--accent)">${row.ticker}</td>
                     <td>${row.sample_count}</td>
-                    <td>${row.correct_count || 0} / ${row.sample_count}</td>
-                    <td><span class="${accClass}">${accuracy}%</span></td>
+                    <td><span class="${accT60Class}">${accT60}%</span> <span style="color:var(--text-muted); font-size:10px">(${row.correct_t60||0}/${row.sample_count})</span></td>
+                    <td><span class="${accT4hClass}">${accT4h}%</span> <span style="color:var(--text-muted); font-size:10px">(${row.correct_t4h||0}/${row.sample_count})</span></td>
                     <td>${row.up_predictions || 0} / ${row.down_predictions || 0}</td>
                     <td>${row.strong_signals || 0}</td>
-                    <td>${moveStr}</td>
+                    <td>${this.fmtPct(row.avg_move_t60_pct, true)}</td>
+                    <td>${this.fmtPct(row.avg_move_t4h_pct, true)}</td>
                 </tr>`;
         }
 
         // Aggregate row
         if (data.length > 1) {
-            const totalAcc = totalSamples > 0
-                ? ((totalCorrect / totalSamples) * 100).toFixed(1) : 0;
-            const totalAccClass = totalAcc >= 60 ? 'accuracy-good' : totalAcc >= 45 ? 'accuracy-ok' : 'accuracy-bad';
+            const totalAccT60 = totalSamples > 0
+                ? ((totalCorrectT60 / totalSamples) * 100).toFixed(1) : 0;
+            const totalAccT4h = totalSamples > 0
+                ? ((totalCorrectT4h / totalSamples) * 100).toFixed(1) : 0;
+            const t60Class = totalAccT60 >= 60 ? 'accuracy-good' : totalAccT60 >= 45 ? 'accuracy-ok' : 'accuracy-bad';
+            const t4hClass = totalAccT4h >= 60 ? 'accuracy-good' : totalAccT4h >= 45 ? 'accuracy-ok' : 'accuracy-bad';
             html += `
                 <tr style="border-top:2px solid var(--border-light)">
                     <td style="font-weight:600; color:var(--text-muted)">ALL</td>
                     <td>${totalSamples}</td>
-                    <td>${totalCorrect} / ${totalSamples}</td>
-                    <td><span class="${totalAccClass}">${totalAcc}%</span></td>
+                    <td><span class="${t60Class}">${totalAccT60}%</span></td>
+                    <td><span class="${t4hClass}">${totalAccT4h}%</span></td>
                     <td>${totalUp} / ${totalDown}</td>
+                    <td>-</td>
                     <td>-</td>
                     <td>-</td>
                 </tr>`;

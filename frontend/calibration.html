@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calibration - Market Terminal</title>
-    <link rel="stylesheet" href="/static/css/terminal.css?v=4">
+    <link rel="stylesheet" href="/static/css/terminal.css?v=5">
     <style>
         body { overflow: auto; }
         .cal-container {
@@ -110,7 +110,7 @@
         <div class="cal-section">
             <h2>Average Market Move by Impact Score</h2>
             <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                Shows average absolute SPY % move at T+5min, T+15min, T+1hr after headlines with each impact score.
+                Shows average absolute SPY % move at T+5min, T+15min, T+1hr, T+4hr after headlines with each impact score.
                 Higher impact scores should correspond to larger market moves.
             </p>
             <div id="impact-table"></div>
@@ -119,8 +119,8 @@
         <div class="cal-section">
             <h2>Signal Direction Accuracy</h2>
             <p style="font-size:11px; color:var(--text-muted); margin-bottom:12px;">
-                For verifiable tickers (SPY/SPX/QQQ checked against SPY price, VIX/UVXY checked against VIX price),
-                shows how often the predicted direction (&#8593;/&#8595;) matched actual movement at T+1hr.
+                Tracks actual prices for every predicted ticker at T+0, T+1hr, and T+4hr.
+                Shows how often the predicted direction (&#8593;/&#8595;) matched actual price movement.
             </p>
             <div id="signal-table"></div>
         </div>
@@ -134,6 +134,6 @@
             <div id="sentiment-table"></div>
         </div>
     </div>
-    <script src="/static/js/calibration.js?v=4"></script>
+    <script src="/static/js/calibration.js?v=5"></script>
 </body>
 </html>

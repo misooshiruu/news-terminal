@@ -12,6 +12,7 @@ from config.settings import Settings
 from src.analysis.claude_analyzer import analyze_headline
 from src.database import Database
 from src.delivery.websocket_manager import WebSocketManager
+from src.market_data.market_context import fetch_ticker_prices
 from src.models import Headline
 
 logger = logging.getLogger(__name__)
@@ -107,6 +108,11 @@ class AnalysisConsumer:
                 # Record move tracking baseline (T+0)
                 if self.settings.move_tracking_enabled:
                     await self._record_move_baseline(headline.id, snapshot_id)
+                    # Record per-signal baselines with actual ticker prices
+                    if result.signals:
+                        await self._record_signal_baselines(
+                            headline.id, result.signals
+                        )
 
                 # Broadcast analysis update to WebSocket clients
                 await self.ws_manager.broadcast_analysis_update(
@@ -173,3 +179,17 @@ class AnalysisConsumer:
             )
         except Exception as e:
             logger.debug(f"Failed to record move baseline for headline {headline_id}: {e}")
+
+    async def _record_signal_baselines(self, headline_id: int, signals):
+        """Fetch current prices for each signal ticker and record baselines."""
+        try:
+            tickers = [s.ticker for s in signals]
+            prices = await fetch_ticker_prices(tickers)
+            signal_dicts = [s.model_dump() for s in signals]
+            await self.db.insert_signal_baselines(headline_id, signal_dicts, prices)
+            fetched = sum(1 for p in prices.values() if p is not None)
+            logger.debug(
+                f"Signal baselines: {fetched}/{len(tickers)} prices for headline {headline_id}"
+            )
+        except Exception as e:
+            logger.debug(f"Failed to record signal baselines for headline {headline_id}: {e}")

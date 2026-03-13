@@ -8,7 +8,7 @@ from typing import Optional
 
 import aiosqlite
 
-from src.models import AnalysisResult, Headline, SCHEMA_SQL
+from src.models import AnalysisResult, Headline, SCHEMA_SQL, ticker_to_yf_symbol
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,10 @@ class Database:
         migrations = [
             "ALTER TABLE headlines ADD COLUMN market_context_snapshot_id INTEGER",
             "ALTER TABLE headlines ADD COLUMN signals TEXT",
+            # T+4hr checkpoint on existing SPY/VIX move tracking
+            "ALTER TABLE headline_market_moves ADD COLUMN price_spy_t4h REAL",
+            "ALTER TABLE headline_market_moves ADD COLUMN price_vix_t4h REAL",
+            "ALTER TABLE headline_market_moves ADD COLUMN checked_t4h_at TIMESTAMP",
         ]
         for sql in migrations:
             try:
@@ -295,7 +299,7 @@ class Database:
         self, move_id: int, checkpoint: str,
         spy_price: Optional[float], vix_price: Optional[float],
     ):
-        """Update a specific checkpoint (t5, t15, t60) for a move record."""
+        """Update a specific checkpoint (t5, t15, t60, t4h) for a move record."""
         spy_col = f"price_spy_{checkpoint}"
         vix_col = f"price_vix_{checkpoint}"
         checked_col = f"checked_{checkpoint}_at"
@@ -305,11 +309,80 @@ class Database:
                 WHERE id = ?""",
             (spy_price, vix_price, datetime.utcnow().isoformat(), move_id),
         )
-        # Check if all checkpoints are now filled
+        # Check if all checkpoints are now filled (including t4h)
         await self._db.execute(
             """UPDATE headline_market_moves SET is_complete = 1
                WHERE id = ? AND checked_t5_at IS NOT NULL
-               AND checked_t15_at IS NOT NULL AND checked_t60_at IS NOT NULL""",
+               AND checked_t15_at IS NOT NULL AND checked_t60_at IS NOT NULL
+               AND checked_t4h_at IS NOT NULL""",
+            (move_id,),
+        )
+        await self._db.commit()
+
+    # --- Per-Signal Move Tracking ---
+
+    async def insert_signal_baselines(
+        self, headline_id: int, signals: list[dict], prices: dict[str, float],
+    ):
+        """Insert T+0 baselines for each directional signal in a headline.
+
+        Args:
+            signals: list of signal dicts with ticker, direction, magnitude
+            prices: dict mapping ticker -> current price (from yfinance)
+        """
+        now = datetime.utcnow().isoformat()
+        for sig in signals:
+            ticker = sig.get("ticker", "").upper()
+            if not ticker:
+                continue
+            yf_sym = ticker_to_yf_symbol(ticker)
+            baseline = prices.get(ticker)
+            if baseline is None:
+                continue  # Skip if we couldn't get a price
+            await self._db.execute(
+                """INSERT INTO signal_moves
+                   (headline_id, ticker, yf_symbol, direction, magnitude,
+                    analyzed_at, baseline_price)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    headline_id, ticker, yf_sym,
+                    sig.get("direction", "up"), sig.get("magnitude", 1),
+                    now, baseline,
+                ),
+            )
+        await self._db.commit()
+
+    async def get_pending_signal_moves(self) -> list[dict]:
+        """Get signal moves needing checkpoint updates."""
+        cursor = await self._db.execute(
+            """SELECT id, headline_id, ticker, yf_symbol, direction,
+                      magnitude, analyzed_at, baseline_price,
+                      checked_t60_at, checked_t4h_at
+               FROM signal_moves
+               WHERE is_complete = 0 AND baseline_price IS NOT NULL
+               ORDER BY analyzed_at ASC
+               LIMIT 200"""
+        )
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+    async def update_signal_checkpoint(
+        self, move_id: int, checkpoint: str, price: Optional[float],
+    ):
+        """Update a signal move checkpoint (t60 or t4h)."""
+        price_col = f"price_{checkpoint}"
+        checked_col = f"checked_{checkpoint}_at"
+        await self._db.execute(
+            f"""UPDATE signal_moves
+                SET {price_col} = ?, {checked_col} = ?
+                WHERE id = ?""",
+            (price, datetime.utcnow().isoformat(), move_id),
+        )
+        # Mark complete when both checkpoints are filled
+        await self._db.execute(
+            """UPDATE signal_moves SET is_complete = 1
+               WHERE id = ? AND checked_t60_at IS NOT NULL
+               AND checked_t4h_at IS NOT NULL""",
             (move_id,),
         )
         await self._db.commit()
@@ -325,10 +398,12 @@ class Database:
                  AVG(ABS(m.price_spy_t5 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t5_pct,
                  AVG(ABS(m.price_spy_t15 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t15_pct,
                  AVG(ABS(m.price_spy_t60 - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t60_pct,
+                 AVG(ABS(m.price_spy_t4h - m.price_spy_t0) / NULLIF(m.price_spy_t0, 0) * 100) as avg_spy_move_t4h_pct,
                  AVG(ABS(m.price_vix_t60 - m.price_vix_t0)) as avg_vix_move_t60
                FROM headline_market_moves m
                JOIN headlines h ON h.id = m.headline_id
-               WHERE m.price_spy_t0 IS NOT NULL AND m.is_complete = 1
+               WHERE m.price_spy_t0 IS NOT NULL
+                 AND m.checked_t60_at IS NOT NULL
                GROUP BY h.impact_score
                ORDER BY h.impact_score"""
         )
@@ -355,54 +430,35 @@ class Database:
         return [dict(r) for r in rows]
 
     async def get_calibration_by_signals(self) -> list[dict]:
-        """Check directional signal accuracy for verifiable tickers (SPY/VIX).
+        """Check directional signal accuracy using actual per-ticker prices.
 
-        Uses json_each() to unpack the signals JSON array stored in each
-        headline row.  Only signals referencing SPY-family or VIX-family
-        tickers are included because those are the assets we actually track
-        prices for in headline_market_moves.
+        Uses the signal_moves table which tracks real prices for each
+        predicted ticker at T+1hr and T+4hr.
         """
         cursor = await self._db.execute(
             """SELECT
-                 json_extract(j.value, '$.ticker') as ticker,
+                 ticker,
                  COUNT(*) as sample_count,
                  SUM(CASE
-                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
-                          AND json_extract(j.value, '$.direction') = 'up'
-                          AND m.price_spy_t60 > m.price_spy_t0 THEN 1
-                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
-                          AND json_extract(j.value, '$.direction') = 'down'
-                          AND m.price_spy_t60 < m.price_spy_t0 THEN 1
-                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
-                          AND json_extract(j.value, '$.direction') = 'up'
-                          AND m.price_vix_t60 > m.price_vix_t0 THEN 1
-                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
-                          AND json_extract(j.value, '$.direction') = 'down'
-                          AND m.price_vix_t60 < m.price_vix_t0 THEN 1
+                     WHEN direction = 'up' AND price_t60 > baseline_price THEN 1
+                     WHEN direction = 'down' AND price_t60 < baseline_price THEN 1
                      ELSE 0
-                 END) as correct_count,
-                 SUM(CASE WHEN json_extract(j.value, '$.direction')='up'
-                          THEN 1 ELSE 0 END) as up_predictions,
-                 SUM(CASE WHEN json_extract(j.value, '$.direction')='down'
-                          THEN 1 ELSE 0 END) as down_predictions,
-                 SUM(CASE WHEN json_extract(j.value, '$.magnitude')=2
-                          THEN 1 ELSE 0 END) as strong_signals,
-                 AVG(CASE
-                     WHEN json_extract(j.value, '$.ticker') IN ('SPY','SPX','QQQ')
-                         THEN (m.price_spy_t60 - m.price_spy_t0)
-                              / NULLIF(m.price_spy_t0, 0) * 100
-                     WHEN json_extract(j.value, '$.ticker') IN ('VIX','UVXY')
-                         THEN (m.price_vix_t60 - m.price_vix_t0)
-                 END) as avg_actual_move
-               FROM headline_market_moves m
-               JOIN headlines h ON h.id = m.headline_id
-               , json_each(h.signals) j
-               WHERE m.is_complete = 1
-                 AND m.price_spy_t0 IS NOT NULL
-                 AND h.signals IS NOT NULL
-                 AND h.signals != '[]'
-                 AND json_extract(j.value, '$.ticker')
-                     IN ('SPY','SPX','QQQ','VIX','UVXY')
+                 END) as correct_t60,
+                 SUM(CASE
+                     WHEN direction = 'up' AND price_t4h > baseline_price THEN 1
+                     WHEN direction = 'down' AND price_t4h < baseline_price THEN 1
+                     ELSE 0
+                 END) as correct_t4h,
+                 SUM(CASE WHEN direction='up' THEN 1 ELSE 0 END) as up_predictions,
+                 SUM(CASE WHEN direction='down' THEN 1 ELSE 0 END) as down_predictions,
+                 SUM(CASE WHEN magnitude=2 THEN 1 ELSE 0 END) as strong_signals,
+                 AVG((price_t60 - baseline_price)
+                     / NULLIF(baseline_price, 0) * 100) as avg_move_t60_pct,
+                 AVG((price_t4h - baseline_price)
+                     / NULLIF(baseline_price, 0) * 100) as avg_move_t4h_pct
+               FROM signal_moves
+               WHERE baseline_price IS NOT NULL
+                 AND price_t60 IS NOT NULL
                GROUP BY ticker
                ORDER BY sample_count DESC"""
         )
