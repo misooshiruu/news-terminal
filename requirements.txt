@@ -5,6 +5,7 @@ uvicorn[standard]>=0.34.0,<1.0
 # Data sources
 aiohttp>=3.11.0,<4.0
 feedparser>=6.0.0,<7.0
+yfinance>=1.2.0,<2.0
 
 # Database
 aiosqlite>=0.20.0,<1.0

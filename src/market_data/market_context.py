@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -9,15 +10,19 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-# Finnhub symbol map — adjust if free tier doesn't resolve certain symbols
+# Finnhub symbol map — VIX removed, fetched via yfinance instead
 QUOTE_SYMBOLS = {
     "spy": "SPY",
-    "vix": "CBOE:VIX",
     "dxy": "FOREXCOM:DXY",
     "gold": "OANDA:XAU_USD",
     "oil": "OANDA:WTICO_USD",
     "btc": "BINANCE:BTCUSDT",
 }
+
+# yfinance symbols (synchronous library, run in thread pool)
+YFINANCE_SYMBOLS = {"vix": "^VIX"}
+
+_yf_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="yfinance")
 
 
 class MarketSnapshot:
@@ -84,11 +89,13 @@ class MarketContextProvider:
         """Fetch all market data in parallel and build a new snapshot."""
         snapshot = MarketSnapshot()
 
-        # Fetch quotes in parallel
+        # Fetch Finnhub quotes + yfinance quotes in parallel
         tasks = {
             key: self._fetch_quote(symbol)
             for key, symbol in QUOTE_SYMBOLS.items()
         }
+        for key, symbol in YFINANCE_SYMBOLS.items():
+            tasks[key] = self._fetch_yfinance(symbol)
         tasks["calendar"] = self._fetch_economic_calendar()
         tasks["status"] = self._fetch_market_status()
 
@@ -97,7 +104,7 @@ class MarketContextProvider:
         )
         result_map = dict(zip(tasks.keys(), results))
 
-        # Process quote results
+        # Process Finnhub quote results
         for key in QUOTE_SYMBOLS:
             data = result_map.get(key)
             if isinstance(data, dict) and data.get("c"):
@@ -106,8 +113,6 @@ class MarketContextProvider:
                 if key == "spy":
                     snapshot.spy_price = price
                     snapshot.spy_change_pct = change_pct
-                elif key == "vix":
-                    snapshot.vix_price = price
                 elif key == "dxy":
                     snapshot.dxy_price = price
                 elif key == "gold":
@@ -118,6 +123,11 @@ class MarketContextProvider:
                     snapshot.btc_price = price
             elif isinstance(data, Exception):
                 logger.debug(f"Failed to fetch {key}: {data}")
+
+        # Process yfinance results
+        vix_data = result_map.get("vix")
+        if isinstance(vix_data, dict) and vix_data.get("price"):
+            snapshot.vix_price = vix_data["price"]
 
         # Calendar
         cal = result_map.get("calendar")
@@ -156,6 +166,18 @@ class MarketContextProvider:
                 text = await resp.text()
                 logger.debug(f"Finnhub quote {symbol} returned {resp.status}: {text[:100]}")
                 return {}
+
+    async def _fetch_yfinance(self, symbol: str) -> dict:
+        """Fetch a quote via yfinance (synchronous lib, run in thread pool)."""
+        loop = asyncio.get_running_loop()
+
+        def _get():
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            info = ticker.fast_info
+            return {"price": info.last_price, "prev_close": info.previous_close}
+
+        return await loop.run_in_executor(_yf_executor, _get)
 
     async def _fetch_economic_calendar(self) -> list[str]:
         """Fetch upcoming economic events from Finnhub."""

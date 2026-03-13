@@ -27,26 +27,36 @@ Respond ONLY with valid JSON in this exact format:
   ]
 }
 
+CRITICAL — DIRECTIONAL ACCURACY RULES:
+- Only predict a direction if the headline gives a clear, direct reason for that asset to move.
+- News that sounds negative does NOT automatically mean markets go down. Markets often rally on clarity, certainty, or "less bad than expected" outcomes.
+- News that sounds positive does NOT automatically mean markets go up. Good news can be "sell the news" or already priced in.
+- If the headline is ambiguous, incremental, or already widely known — do NOT include SPY/QQQ signals. Focus on the specific assets directly affected.
+- Avoid reflexive bearish bias. Ask yourself: "Would a trader actually change their position based on this headline alone?"
+- If a headline merely restates existing conditions or consensus expectations, it has minimal directional impact.
+
 Rules for signals:
-- Include 1-5 signals for the most directly impacted assets
+- Include 1-5 signals for the most DIRECTLY impacted assets only
 - ticker: standard symbol (SPY, QQQ, CL, GC, DX, BTC, XLE, UAL, TLT, etc). Use futures symbols for commodities.
 - direction: "up" or "down"
-- magnitude: 1 (slight move) or 2 (significant move)
+- magnitude: 1 (slight move) or 2 (significant move). Use 2 ONLY for genuinely surprising or large-magnitude news.
 - explanation: concise reason (under 15 words)
 - Order by magnitude descending (strongest impact first)
+- Only include SPY or QQQ if the headline has genuine BROAD MARKET implications (systemic risk, major policy shifts, surprise data). Most headlines only affect specific sectors or stocks.
 
-Sentiment: derive from overall market direction. If most signals are down or the primary signal is bearish for broad markets, use "bearish". Vice versa for "bullish". Mixed or minor = "neutral".
+Sentiment: derive from overall market direction. Use "neutral" for most headlines — only use "bullish" or "bearish" when the headline has clear, unambiguous broad-market directional implications. When in doubt, use "neutral".
 
 Categories (use 1-3): Energy, Bonds, Equities, FX, Commodities, Crypto, Geopolitics, Trade, Monetary Policy, Fiscal Policy, Regulation, Earnings, M&A, Tech, Real Estate, Labor, Politics
 
 Asset classes (use 1-3): Equities, Fixed Income, Commodities, FX, Crypto, Derivatives
 
-Impact score guide:
-1 = Minimal, routine news
-2 = Minor, may move individual stocks
-3 = Moderate, sector-level impact
-4 = Significant, broad market movement expected
-5 = Major, systemic/crisis level
+Impact score guide (be strict — most news is low-impact):
+1 = Routine, no meaningful market impact. Corporate updates, scheduled data in-line with expectations, ongoing stories with no new information.
+2 = Minor, may move individual stocks or narrow sectors. Single-company earnings, analyst upgrades/downgrades, minor policy proposals.
+3 = Moderate, clear sector-level impact. Surprise earnings from major companies, meaningful regulatory changes, unexpected commodity supply disruptions.
+4 = Significant, likely moves broad indices. Surprise Fed actions, major geopolitical escalations, significantly unexpected economic data (CPI/jobs misses).
+5 = Major, systemic/crisis level. War declarations, financial system stress, emergency Fed interventions.
+CALIBRATION: ~50-60% of headlines should be impact 1-2. Only ~5-10% should be impact 4-5. If you find yourself giving 3+ to most headlines, you are over-scoring.
 
 When market context is provided, factor it into your impact assessment:
 - High VIX (>25) means fear is already elevated, so bearish news may have less marginal impact (partially priced in)
